@@ -13,7 +13,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.Instant;
 
 /**
- * Represents a single personalised email waiting to be sent.
+ * Represents a single personalized email waiting to be sent.
  * One row is created per recipient when a campaign send is triggered.
  * The htmlContent at this point already has merge tags replaced,
  * tracking pixels injected, and links rewritten for click tracking.
