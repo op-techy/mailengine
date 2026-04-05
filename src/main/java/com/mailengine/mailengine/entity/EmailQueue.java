@@ -12,12 +12,22 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
 
+/**
+ * Represents a single personalised email waiting to be sent.
+ * One row is created per recipient when a campaign send is triggered.
+ * The htmlContent at this point already has merge tags replaced,
+ * tracking pixels injected, and links rewritten for click tracking.
+ *
+ * The sending worker claims rows in batches using SELECT ... FOR UPDATE SKIP LOCKED,
+ * which prevents two workers from picking up the same email simultaneously.
+ */
 @Getter
 @Setter
 @Entity
 @EntityListeners(AuditingEntityListener.class)
 @Table(name = "email_queue")
 public class EmailQueue {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)
@@ -36,6 +46,7 @@ public class EmailQueue {
     @Column(name = "to_email", nullable = false)
     private String toEmail;
 
+    // Fully personalised HTML — ready to send as-is
     @NotNull
     @Column(name = "html_content", nullable = false, length = Integer.MAX_VALUE)
     private String htmlContent;
@@ -55,17 +66,22 @@ public class EmailQueue {
     @Column(name = "from_email", nullable = false)
     private String fromEmail;
 
-   @Enumerated(EnumType.STRING)
+    // pending → sending → sent/failed
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 20)
     private QueueStatus status = QueueStatus.pending;
 
+    // Tracks how many send attempts have been made — stops retrying after 3
     @ColumnDefault("0")
     @Column(name = "attempts")
     private Integer attempts;
 
+    // Stores the SES error message if a send attempt fails
     @Column(name = "error_message", length = Integer.MAX_VALUE)
     private String errorMessage;
 
+    // Set by the worker when it claims this row — prevents other workers from picking it up.
+    // If a worker crashes mid-send, the lock expires and another worker can retry.
     @Column(name = "locked_until")
     private Instant lockedUntil;
 
@@ -73,8 +89,7 @@ public class EmailQueue {
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
 
+    // Populated once the email is successfully handed off to SES
     @Column(name = "sent_at")
     private Instant sentAt;
-
-
 }

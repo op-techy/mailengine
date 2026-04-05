@@ -19,26 +19,56 @@ repositories {
 }
 
 dependencies {
+    // ── Core (partner's) ────────────────────────────────────────────
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-    implementation 'org.springframework.boot:spring-boot-starter-mail'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-web'
-    compileOnly 'org.projectlombok:lombok'
-    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+    // ── Email sending via SES SMTP (partner's, used by your worker) ─
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+
+    // ── Database ─────────────────────────────────────────────────────
     runtimeOnly 'org.postgresql:postgresql'
-    annotationProcessor 'org.projectlombok:lombok'
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testImplementation 'org.springframework.security:spring-security-test'
-    testCompileOnly 'org.projectlombok:lombok'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    testAnnotationProcessor 'org.projectlombok:lombok'
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
+
+    // ── Auth ─────────────────────────────────────────────────────────
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+
+    // ── API Docs ──────────────────────────────────────────────────────
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6'
+
+    // ── Lombok ────────────────────────────────────────────────────────
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    // ── Dev Tools ─────────────────────────────────────────────────────
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+    // ── YOUR ADDITIONS (BE-3 & BE-4) ─────────────────────────────────
+
+    // Rate limiting — controls how fast the worker sends emails to SES (BE-3)
+    implementation 'com.bucket4j:bucket4j-core:8.10.1'
+
+    // GeoIP — converts an IP address to country + city on open/click events (BE-4)
+    implementation 'com.maxmind.geoip2:geoip2:4.2.0'
+
+    // User-Agent parsing — detects device type, email client, OS from request headers (BE-4)
+    implementation 'nl.basjes.parse.useragent:yauaa:7.28.1'
+
+    // Caching — prevents repeated DB hits for analytics queries (BE-4)
+    implementation 'com.github.ben-manes.caffeine:caffeine'
+    implementation 'org.springframework.boot:spring-boot-starter-cache'
+
+    // ── Test ──────────────────────────────────────────────────────────
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+    testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 tasks.named('test') {
