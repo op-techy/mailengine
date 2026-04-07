@@ -65,6 +65,14 @@ public class AuthService {
         return new AuthResponse(token,user.getId(), user.getEmail(), user.getRole());
     }
 
+    /**
+     * Authenticates a user based on the provided email and password. If the authentication is
+     * successful, a JWT token is generated and returned along with the user details.
+     *
+     * @param request the login request containing the user's email and password
+     * @return an {@code AuthResponse} object containing the JWT token, user ID, email, and user role
+     * @throws RuntimeException if the email or password provided is incorrect
+     */
     public AuthResponse login(LoginRequest request){
 
         User user = userRepository.findByEmail(request.getEmail())

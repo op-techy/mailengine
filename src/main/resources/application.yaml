@@ -17,6 +17,11 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
-  jwt:
+
+jwt:
     secret: ${JWT_SECRET}
     expiration: ${JWT_EXPIRATION}
+
+logging:
+    level:
+      org.springframework.security: DEBUG

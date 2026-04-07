@@ -1,4 +1,4 @@
-package com.mailengine.mailengine.dto.campaign;
+package com.mailengine.mailengine.dto.response;
 
 import com.mailengine.mailengine.entity.enums.CampaignStatus;
 import lombok.Builder;

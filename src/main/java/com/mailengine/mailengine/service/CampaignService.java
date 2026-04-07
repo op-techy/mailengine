@@ -1,8 +1,8 @@
 package com.mailengine.mailengine.service;
 
-import com.mailengine.mailengine.dto.campaign.CampaignRequest;
-import com.mailengine.mailengine.dto.campaign.CampaignResponse;
-import com.mailengine.mailengine.dto.campaign.CampaignScheduleRequest;
+import com.mailengine.mailengine.dto.request.CampaignRequest;
+import com.mailengine.mailengine.dto.response.CampaignResponse;
+import com.mailengine.mailengine.dto.request.CampaignScheduleRequest;
 import com.mailengine.mailengine.entity.Campaign;
 import com.mailengine.mailengine.entity.enums.CampaignStatus;
 import com.mailengine.mailengine.repository.CampaignRepository;

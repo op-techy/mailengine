@@ -49,6 +49,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
 
         final String authHeader = request.getHeader("Authorization");
+        log.info("Auth header received: {}", authHeader);
 
         final String jwt;
 
@@ -75,6 +76,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                         new WebAuthenticationDetailsSource().buildDetails(request)
                 );
                 SecurityContextHolder.getContext().setAuthentication(authToken);
+                log.info("Authentication set for user: {}", user.getEmail());
+                log.info("Authorities: {}", authToken.getAuthorities());
             }
         } catch (Exception e){
             logger.warn("JWT authentication failed: {}",e);
