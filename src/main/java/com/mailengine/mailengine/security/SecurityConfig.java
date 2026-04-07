@@ -22,25 +22,30 @@ public class SecurityConfig {
     private final JwtAuthFilter jwtAuthFilter;
 
     /**
-     * Configures and returns the {@link SecurityFilterChain} for the application, defining
-     * security policies such as disabling CSRF, using stateless session management, authorizing
-     * certain requests, and registering a JWT authentication filter.
+     * Configures the security filter chain for the application using the provided {@link HttpSecurity}.
+     * This method customizes the security settings, such as disabling CSRF, form login, and HTTP Basic authentication,
+     * setting the session management policy to stateless, and defining security rules for HTTP request authorization.
+     * Additionally, it adds a {@link JwtAuthFilter} before the {@link UsernamePasswordAuthenticationFilter}.
      *
-     * @param http the {@link HttpSecurity} object used to configure the security settings for the application.
-     *             This includes defining various security configurations such as authentication requests, filters,
-     *             and session management.
-     * @return a built {@link SecurityFilterChain} containing the configured security settings.
-     * @throws Exception if there is an error during the configuration process.
+     * @param http the {@link HttpSecurity} instance used to configure security for the application.
+     *             This includes defining the security filters, session management, and request authorization rules.
+     * @return the built {@link SecurityFilterChain} that defines the security configuration for the application.
+     * @throws Exception if an error occurs while configuring the {@link HttpSecurity}.
      */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer :: disable)
+                .formLogin(AbstractHttpConfigurer :: disable)
+                .httpBasic(AbstractHttpConfigurer :: disable)
                 .sessionManagement( session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/auth/**"
+                                , "/v3/api-docs/**"
+                                , "/swagger-ui/**"
+                                , "/swagger-ui.html").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()
                 )
