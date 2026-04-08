@@ -28,6 +28,13 @@ public class GlobalExceptionHandler {
                         "Validation failed", errors));
     }
 
+    // ── Authentication errors (401) ──────────────────────────────────────────
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<Map<String, String>> handleUnauthorized(UnauthorizedException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("message", ex.getMessage()));
+    }
+
     // ── Business-logic "not found" ───────────────────────────────────────────
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex) {

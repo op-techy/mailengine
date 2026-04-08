@@ -9,7 +9,7 @@ import com.mailengine.mailengine.entity.User;
 import com.mailengine.mailengine.entity.enums.Role;
 import com.mailengine.mailengine.exception.BadRequestException;
 import com.mailengine.mailengine.exception.ConflictException;
-import com.mailengine.mailengine.exception.ResourceNotFoundException;
+import com.mailengine.mailengine.exception.UnauthorizedException;
 import com.mailengine.mailengine.repository.AccountRepository;
 import com.mailengine.mailengine.repository.EmailVerificationTokenRepository;
 import com.mailengine.mailengine.repository.PasswordResetTokenRepository;
@@ -115,18 +115,23 @@ public class AuthService {
     public AuthResponse login(LoginRequest request) {
         // Always use the same error message to avoid user enumeration
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new BadRequestException("Invalid email or password"));
+                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            throw new BadRequestException("Invalid email or password");
+            throw new UnauthorizedException("Invalid email or password");
         }
 
         user.setLastLogin(Instant.now());
         userRepository.save(user);
 
         String token = jwtService.generateToken(user);
-        return new AuthResponse(token, user.getId(), user.getName(), user.getEmail(),
-                user.getRole(), user.getMustChangePwd());
+        long expiration = jwtService.getExpirationTime();
+
+        return new AuthResponse(
+                token,
+                new AuthResponse.UserDto(user.getId(), user.getName(), user.getEmail(), user.getRole()),
+                expiration
+        );
     }
 
     // ── Change password (authenticated) ──────────────────────────────────────

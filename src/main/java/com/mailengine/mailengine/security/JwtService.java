@@ -87,4 +87,14 @@ public class JwtService {
         byte[] keyBytes = Decoders.BASE64.decode(secretKey);
         return Keys.hmacShaKeyFor(keyBytes);
     }
+
+    /**
+     * Retrieves the expiration time for JWT tokens in milliseconds.
+     * The expiration time determines the validity period of generated tokens.
+     *
+     * @return the expiration time in milliseconds as a {@code long}.
+     */
+    public long getExpirationTime() {
+        return expirationMs;
+    }
 }
