@@ -40,6 +40,18 @@ public class AuthService {
 
     // ── Register ─────────────────────────────────────────────────────────────
 
+    /**
+     * Registers a new user and an associated account. The method performs the following:
+     * - Checks if an email address is already in use, throwing a conflict exception if so.
+     * - Creates and saves a new account using the company name from the request.
+     * - Creates a new user with the provided details and assigns the user an admin role.
+     * - Generates an email verification token valid for 24 hours.
+     * - Sends a verification email containing the token.
+     *
+     * @param request the registration request containing user and account details such as email,
+     *                password, name, and company name
+     * @throws ConflictException if an account with the provided email already exists
+     */
     public void register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new ConflictException("Email already in use");
@@ -67,6 +79,15 @@ public class AuthService {
 
     // ── Verify email ──────────────────────────────────────────────────────────
 
+    /**
+     * Verifies an email address using the provided verification token. This method completes
+     * the email verification process by checking the validity of the token, ensuring it has
+     * not been used or expired, and marking the associated user as verified. It also updates
+     * the token's status to indicate it has been used.
+     *
+     * @param token the email verification token to be validated and processed
+     * @throws BadRequestException if the token is invalid, expired, or already used
+     */
     public void verifyEmail(String token) {
         EmailVerificationToken evt = verificationTokenRepository.findByToken(token)
                 .orElseThrow(() -> new BadRequestException("Invalid or expired verification link"));
@@ -84,7 +105,13 @@ public class AuthService {
     }
 
     // ── Login ─────────────────────────────────────────────────────────────────
-
+    /**
+     * Authenticates a user based on the provided login request and generates a JWT token upon successful authentication.
+     *
+     * @param request The login request containing the user's email and password.
+     * @return An authentication response containing the generated token, user details, and additional metadata.
+     * @throws BadRequestException If the email or password is invalid.
+     */
     public AuthResponse login(LoginRequest request) {
         // Always use the same error message to avoid user enumeration
         User user = userRepository.findByEmail(request.getEmail())
@@ -103,7 +130,13 @@ public class AuthService {
     }
 
     // ── Change password (authenticated) ──────────────────────────────────────
-
+    /**
+     * Updates the current user's password to the new password provided in the request.
+     * Validates the current password before performing the update.
+     *
+     * @param request the request object containing the current password and the new password
+     * @throws BadRequestException if the current password does not match the user's existing password
+     */
     public void changePassword(ChangePasswordRequest request) {
         User user = getCurrentUser();
 
@@ -117,7 +150,13 @@ public class AuthService {
     }
 
     // ── Forgot password ───────────────────────────────────────────────────────
-
+    /**
+     * Handles the password reset process by generating and sending a password reset token
+     * to the specified email if the user exists. The system ensures security by not revealing
+     * whether the email corresponds to an existing user.
+     *
+     * @param request The request containing the email address for the password reset process.
+     */
     public void forgotPassword(ForgotPasswordRequest request) {
         // Always respond 200 — never reveal whether the email exists
         userRepository.findByEmail(request.getEmail()).ifPresent(user -> {
@@ -133,7 +172,15 @@ public class AuthService {
     }
 
     // ── Reset password ────────────────────────────────────────────────────────
-
+    /**
+     * Resets the password for a user based on a password reset request.
+     * Validates the reset token, ensures it is not expired or already used,
+     * updates the user's password, and marks the token as used.
+     *
+     * @param request an instance of {@code ResetPasswordRequest} containing the reset token
+     *                and the new password to be set.
+     * @throws BadRequestException if the reset token is invalid, expired, or already used.
+     */
     public void resetPassword(ResetPasswordRequest request) {
         PasswordResetToken prt = passwordResetTokenRepository.findByToken(request.getToken())
                 .orElseThrow(() -> new BadRequestException("Invalid or expired reset link"));
@@ -152,7 +199,11 @@ public class AuthService {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
+    /**
+     * Retrieves the current authenticated user from the security context.
+     *
+     * @return the currently authenticated {@code User} object, or {@code null} if no user is authenticated.
+     */
     private User getCurrentUser() {
         return (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
     }
