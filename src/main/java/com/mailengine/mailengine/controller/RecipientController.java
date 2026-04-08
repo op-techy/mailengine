@@ -8,6 +8,7 @@ import com.mailengine.mailengine.entity.RecipientList;
 import com.mailengine.mailengine.entity.User;
 import com.mailengine.mailengine.entity.enums.UploadStatus;
 import com.mailengine.mailengine.repository.FileUploadRepository;
+import com.mailengine.mailengine.repository.RecipientListRepository;
 import com.mailengine.mailengine.service.FileUploadService;
 import com.mailengine.mailengine.service.RecipientService;
 import jakarta.validation.Valid;
@@ -19,6 +20,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/recipient-lists/{listId}/recipients")
@@ -28,6 +30,7 @@ public class RecipientController {
     private final RecipientService recipientService;
     private final FileUploadService fileUploadService;
     private final FileUploadRepository fileUploadRepository;
+    private final RecipientListRepository recipientListRepository;
 
     @GetMapping
     public ResponseEntity<Page<RecipientResponse>> getRecipients(
@@ -60,12 +63,17 @@ public class RecipientController {
         User currentUser = (User) SecurityContextHolder.getContext()
                 .getAuthentication().getPrincipal();
 
+        RecipientList list = recipientListRepository.findByIdAndAccountId(listId
+                , currentUser.getAccount().getId())
+                .orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Recipient list not found or you don't have permission to access it"
+        ));
+
         FileUpload upload = new FileUpload();
         upload.setFileName(file.getOriginalFilename());
         upload.setStatus(UploadStatus.processing);
         upload.setAccount(currentUser.getAccount());
-        RecipientList list = new RecipientList();
-        list.setId(listId);
         upload.setRecipientList(list);
         fileUploadRepository.save(upload);
 
