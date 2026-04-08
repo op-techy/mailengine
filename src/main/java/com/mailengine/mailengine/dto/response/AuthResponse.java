@@ -11,10 +11,10 @@ import lombok.Setter;
 public class AuthResponse {
 
     private String token;
-
-    private long userId;
-
+    private Long userId;
+    private String name;
     private String email;
-
     private Role role;
+    /** True when the user must change password before using the app (invited users). */
+    private Boolean mustChangePwd;
 }

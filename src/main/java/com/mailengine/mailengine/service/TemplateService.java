@@ -4,6 +4,7 @@ import com.mailengine.mailengine.dto.request.CreateTemplateRequest;
 import com.mailengine.mailengine.dto.response.TemplateResponse;
 import com.mailengine.mailengine.entity.Template;
 import com.mailengine.mailengine.entity.User;
+import com.mailengine.mailengine.exception.ResourceNotFoundException;
 import com.mailengine.mailengine.repository.TemplateRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -11,6 +12,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 @Service
 @RequiredArgsConstructor
@@ -18,115 +24,131 @@ import org.springframework.transaction.annotation.Transactional;
 public class TemplateService {
 
     private final TemplateRepository templateRepository;
+    private final S3Service s3Service;
 
-    /**
-     * Retrieves the currently authenticated user from the security context.
-     *
-     * @return the {@code User} object representing the currently authenticated user.
-     */
-    private User getCurrentUser() {
-        return (User) SecurityContextHolder.getContext()
-                .getAuthentication().getPrincipal();
-    }
+    // ── Queries ───────────────────────────────────────────────────────────────
 
-    /**
-     * Retrieves a paginated list of templates associated with the currently authenticated user's account.
-     *
-     * @param pageable the {@code Pageable} object specifying pagination and sorting information
-     * @return a {@code Page} of {@code TemplateResponse} objects containing details of the templates
-     */
     @Transactional(readOnly = true)
-    public Page<TemplateResponse> getTemplates(Pageable pageable) {
-        User currentUser = getCurrentUser();
-        return templateRepository.findByAccountId(currentUser.getAccount().getId(), pageable)
-                .map(this::toResponse);
+    public Page<TemplateResponse> getTemplates(String category, Pageable pageable) {
+        Long accountId = getCurrentUser().getAccount().getId();
+        if (StringUtils.hasText(category)) {
+            return templateRepository.findByAccountIdAndCategory(accountId, category, pageable)
+                    .map(this::toResponse);
+        }
+        return templateRepository.findByAccountId(accountId, pageable).map(this::toResponse);
     }
 
-    /**
-     * Retrieves a template by its unique identifier.
-     *
-     * @param id the unique identifier of the template to be retrieved
-     * @return a {@code TemplateResponse} object containing the details of the specified template
-     * @throws RuntimeException if no template is found with the given identifier
-     */
     @Transactional(readOnly = true)
     public TemplateResponse getTemplateById(Long id) {
         return toResponse(findOrThrow(id));
     }
 
-    /**
-     * Creates a new template based on the provided request data.
-     *
-     * @param request the {@code CreateTemplateRequest} object containing the details of the template to be created,
-     *                including its name, category, and HTML content
-     * @return a {@code TemplateResponse} object representing the details of the newly created template
-     */
+    // ── Commands ──────────────────────────────────────────────────────────────
+
     public TemplateResponse createTemplate(CreateTemplateRequest request) {
-        User currentUser = getCurrentUser();
-        Template template = new Template();
-        template.setName(request.getName());
-        template.setCategory(request.getCategory());
-        template.setHtmlContent(request.getHtmlContent());
-        template.setAccount(currentUser.getAccount());
-        template.setCreatedBy(currentUser);
-        return toResponse(templateRepository.save(template));
+        User current = getCurrentUser();
+        Template t = new Template();
+        t.setName(request.getName());
+        t.setCategory(request.getCategory());
+        t.setHtmlContent(request.getHtmlContent());
+        t.setJsonDesign(request.getJsonDesign());
+        t.setAccount(current.getAccount());
+        t.setCreatedBy(current);
+        return toResponse(templateRepository.save(t));
     }
 
-    /**
-     * Updates an existing template in the system with the provided details.
-     *
-     * @param id the unique identifier of the template to be updated
-     * @param request the {@code CreateTemplateRequest} object containing the updated details of the template,
-     *                including its name, category, and HTML content
-     * @return a {@code TemplateResponse} object representing the updated template's details
-     * @throws RuntimeException if no template is found with the given identifier
-     */
     public TemplateResponse updateTemplate(Long id, CreateTemplateRequest request) {
-        Template template = findOrThrow(id);
-        template.setName(request.getName());
-        template.setCategory(request.getCategory());
-        template.setHtmlContent(request.getHtmlContent());
-        return toResponse(templateRepository.save(template));
+        Template t = findOrThrow(id);
+        t.setName(request.getName());
+        t.setCategory(request.getCategory());
+        t.setHtmlContent(request.getHtmlContent());
+        t.setJsonDesign(request.getJsonDesign());
+        return toResponse(templateRepository.save(t));
     }
 
-    /**
-     * Deletes a template with the specified unique identifier.
-     *
-     * @param id the unique identifier of the template to be deleted
-     * @throws RuntimeException if no template is found with the given identifier
-     */
     public void deleteTemplate(Long id) {
         templateRepository.delete(findOrThrow(id));
     }
 
     /**
-     * Retrieves a {@code Template} entity by its unique identifier or throws an exception if it is not found.
-     *
-     * @param id the unique identifier of the template to be retrieved
-     * @return the {@code Template} entity associated with the given identifier
-     * @throws RuntimeException if no template is found with the specified identifier
+     * Duplicates an existing template — creates a new draft with "Copy of" prefix.
+     * PRD Part 9 §3.
      */
-    private Template findOrThrow(Long id) {
-        return templateRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Template not found"));
+    public TemplateResponse duplicateTemplate(Long id) {
+        Template source = findOrThrow(id);
+        User current = getCurrentUser();
+
+        Template copy = new Template();
+        copy.setName("Copy of " + source.getName());
+        copy.setCategory(source.getCategory());
+        copy.setHtmlContent(source.getHtmlContent());
+        copy.setJsonDesign(source.getJsonDesign());
+        copy.setAccount(current.getAccount());
+        copy.setCreatedBy(current);
+
+        return toResponse(templateRepository.save(copy));
     }
 
     /**
-     * Converts a {@code Template} entity into a {@code TemplateResponse} DTO.
-     *
-     * @param template the {@code Template} entity to be converted
-     * @return a {@code TemplateResponse} object containing the details of the provided template
+     * Parses an uploaded .html file and returns its content for preview.
+     * The caller then POSTs to /api/templates to save.
+     * PRD Flow 2 — "Upload HTML File" mode.
      */
-    private TemplateResponse toResponse(Template template) {
+    @Transactional(readOnly = true)
+    public String parseUploadedHtml(MultipartFile file) {
+        String filename = file.getOriginalFilename();
+        if (filename == null || !filename.toLowerCase().endsWith(".html")) {
+            throw new IllegalArgumentException("Only .html files are accepted");
+        }
+        if (file.getSize() > 500 * 1024) {  // 500 KB limit per PRD Part 9 §7
+            throw new IllegalArgumentException("HTML template must be under 500 KB");
+        }
+        try {
+            return new String(file.getBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read uploaded HTML file", e);
+        }
+    }
+
+    /**
+     * Uploads an image to S3 and returns its public URL.
+     * Used by the drag-and-drop editor.
+     */
+    public String uploadImage(MultipartFile file) {
+        if (file.getSize() > 2 * 1024 * 1024) {  // 2 MB limit per PRD Part 9 §7
+            throw new IllegalArgumentException("Image must be under 2 MB");
+        }
+        return s3Service.uploadImage(file);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private Template findOrThrow(Long id) {
+        User current = getCurrentUser();
+        Template t = templateRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Template not found"));
+        // Ensure the template belongs to the current account
+        if (!t.getAccount().getId().equals(current.getAccount().getId())) {
+            throw new ResourceNotFoundException("Template not found");
+        }
+        return t;
+    }
+
+    private User getCurrentUser() {
+        return (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+    }
+
+    private TemplateResponse toResponse(Template t) {
         return new TemplateResponse(
-                template.getId(),
-                template.getName(),
-                template.getCategory(),
-                template.getHtmlContent(),
-                template.getThumbnailUrl(),
-                template.getCreatedBy() != null ? template.getCreatedBy().getName() : null,
-                template.getCreatedAt(),
-                template.getUpdatedAt()
+                t.getId(),
+                t.getName(),
+                t.getCategory(),
+                t.getHtmlContent(),
+                t.getJsonDesign(),
+                t.getThumbnailUrl(),
+                t.getCreatedBy() != null ? t.getCreatedBy().getName() : null,
+                t.getCreatedAt(),
+                t.getUpdatedAt()
         );
     }
 }

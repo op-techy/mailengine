@@ -12,17 +12,12 @@ import java.time.Instant;
 @AllArgsConstructor
 public class UserResponse {
 
-    private long id;
-
+    private Long id;
     private String name;
-
     private String email;
-
     private Role role;
-
     private boolean emailVerified;
-
     private boolean mustChangePwd;
-
+    private Instant lastLogin;
     private Instant createdAt;
 }

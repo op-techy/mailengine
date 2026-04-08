@@ -1,89 +1,159 @@
 package com.mailengine.mailengine.service;
 
-import com.mailengine.mailengine.dto.request.LoginRequest;
-import com.mailengine.mailengine.dto.request.RegisterRequest;
+import com.mailengine.mailengine.dto.request.*;
 import com.mailengine.mailengine.dto.response.AuthResponse;
 import com.mailengine.mailengine.entity.Account;
+import com.mailengine.mailengine.entity.EmailVerificationToken;
+import com.mailengine.mailengine.entity.PasswordResetToken;
 import com.mailengine.mailengine.entity.User;
 import com.mailengine.mailengine.entity.enums.Role;
+import com.mailengine.mailengine.exception.BadRequestException;
+import com.mailengine.mailengine.exception.ConflictException;
+import com.mailengine.mailengine.exception.ResourceNotFoundException;
 import com.mailengine.mailengine.repository.AccountRepository;
+import com.mailengine.mailengine.repository.EmailVerificationTokenRepository;
+import com.mailengine.mailengine.repository.PasswordResetTokenRepository;
 import com.mailengine.mailengine.repository.UserRepository;
 import com.mailengine.mailengine.security.JwtService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Optional;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class AuthService {
 
     private final UserRepository userRepository;
     private final AccountRepository accountRepository;
+    private final EmailVerificationTokenRepository verificationTokenRepository;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
+    private final EmailService emailService;
 
-    /**
-     * Registers a new user and their associated account, and returns an authentication response with a JWT token.
-     * The method performs the following steps:
-     * - Checks if the email provided in the request is already in use.
-     * - Creates a new account and associates it with the user.
-     * - Creates an admin user with the provided details.
-     * - Generates a JWT token for the created user.
-     *
-     * @param request the registration request containing user and account details, including name, email,
-     *                password, and company name
-     * @return an {@code AuthResponse} object containing the JWT token, user ID, email, and user role
-     * @throws RuntimeException if the email provided in the request is already in use
-     */
-    public AuthResponse register(RegisterRequest request){
+    // ── Register ─────────────────────────────────────────────────────────────
 
-        // Check if user already exists
-        if(userRepository.existsByEmail(request.getEmail())){
-            throw new RuntimeException("Email already in use");
+    public void register(RegisterRequest request) {
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new ConflictException("Email already in use");
         }
 
-        // Create account
         Account account = new Account();
         account.setCompanyName(request.getCompanyName());
         accountRepository.save(account);
 
-        // Create admin user
         User user = new User();
         user.setName(request.getName());
         user.setEmail(request.getEmail());
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setRole(Role.admin);
         user.setAccount(account);
+        user.setEmailVerified(false);
         userRepository.save(user);
 
-        // Generate JWT
-        String token = jwtService.generateToken(user);
+        String token = UUID.randomUUID().toString();
+        verificationTokenRepository.save(
+                new EmailVerificationToken(token, user, Instant.now().plus(24, ChronoUnit.HOURS)));
 
-        // Return response - no password or sensitive data
-        return new AuthResponse(token,user.getId(), user.getEmail(), user.getRole());
+        emailService.sendVerificationEmail(user.getEmail(), token);
     }
 
-    /**
-     * Authenticates a user based on the provided email and password. If the authentication is
-     * successful, a JWT token is generated and returned along with the user details.
-     *
-     * @param request the login request containing the user's email and password
-     * @return an {@code AuthResponse} object containing the JWT token, user ID, email, and user role
-     * @throws RuntimeException if the email or password provided is incorrect
-     */
-    public AuthResponse login(LoginRequest request){
+    // ── Verify email ──────────────────────────────────────────────────────────
 
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("Wrong email or password"));
+    public void verifyEmail(String token) {
+        EmailVerificationToken evt = verificationTokenRepository.findByToken(token)
+                .orElseThrow(() -> new BadRequestException("Invalid or expired verification link"));
 
-        if(!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())){
-            throw new RuntimeException("Wrong email or password");
+        if (evt.isUsed() || evt.isExpired()) {
+            throw new BadRequestException("Verification link has expired or already been used");
         }
 
-        String token = jwtService.generateToken(user);
+        User user = evt.getUser();
+        user.setEmailVerified(true);
+        userRepository.save(user);
 
-        return new AuthResponse(token,user.getId(), user.getEmail(), user.getRole());
+        evt.setUsed(true);
+        verificationTokenRepository.save(evt);
+    }
+
+    // ── Login ─────────────────────────────────────────────────────────────────
+
+    public AuthResponse login(LoginRequest request) {
+        // Always use the same error message to avoid user enumeration
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new BadRequestException("Invalid email or password"));
+
+        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            throw new BadRequestException("Invalid email or password");
+        }
+
+        user.setLastLogin(Instant.now());
+        userRepository.save(user);
+
+        String token = jwtService.generateToken(user);
+        return new AuthResponse(token, user.getId(), user.getName(), user.getEmail(),
+                user.getRole(), user.getMustChangePwd());
+    }
+
+    // ── Change password (authenticated) ──────────────────────────────────────
+
+    public void changePassword(ChangePasswordRequest request) {
+        User user = getCurrentUser();
+
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
+            throw new BadRequestException("Current password is incorrect");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        user.setMustChangePwd(false);
+        userRepository.save(user);
+    }
+
+    // ── Forgot password ───────────────────────────────────────────────────────
+
+    public void forgotPassword(ForgotPasswordRequest request) {
+        // Always respond 200 — never reveal whether the email exists
+        userRepository.findByEmail(request.getEmail()).ifPresent(user -> {
+            // Invalidate any existing tokens for this user
+            passwordResetTokenRepository.deleteByUserId(user.getId());
+
+            String token = UUID.randomUUID().toString();
+            passwordResetTokenRepository.save(
+                    new PasswordResetToken(token, user, Instant.now().plus(1, ChronoUnit.HOURS)));
+
+            emailService.sendPasswordResetEmail(user.getEmail(), token);
+        });
+    }
+
+    // ── Reset password ────────────────────────────────────────────────────────
+
+    public void resetPassword(ResetPasswordRequest request) {
+        PasswordResetToken prt = passwordResetTokenRepository.findByToken(request.getToken())
+                .orElseThrow(() -> new BadRequestException("Invalid or expired reset link"));
+
+        if (prt.isUsed() || prt.isExpired()) {
+            throw new BadRequestException("Reset link has expired or already been used");
+        }
+
+        User user = prt.getUser();
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        user.setMustChangePwd(false);
+        userRepository.save(user);
+
+        prt.setUsed(true);
+        passwordResetTokenRepository.save(prt);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private User getCurrentUser() {
+        return (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
     }
 }
