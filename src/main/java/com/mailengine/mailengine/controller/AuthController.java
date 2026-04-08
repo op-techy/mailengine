@@ -1,17 +1,16 @@
 package com.mailengine.mailengine.controller;
 
-import com.mailengine.mailengine.dto.request.LoginRequest;
-import com.mailengine.mailengine.dto.request.RegisterRequest;
+import com.mailengine.mailengine.dto.request.*;
 import com.mailengine.mailengine.dto.response.AuthResponse;
+import com.mailengine.mailengine.dto.response.MessageResponse;
 import com.mailengine.mailengine.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -20,13 +19,87 @@ public class AuthController {
 
     private final AuthService authService;
 
+    /**
+     * Registers a new user account with the provided registration details. The user must verify their
+     * email to complete the registration process.
+     *
+     * @param request the registration request containing the user details such as email, password,
+     *                and any additional required information
+     * @return a map containing a success message indicating the account creation status
+     */
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register (@Valid @RequestBody RegisterRequest registerRequest) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(registerRequest));
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, String> register(@Valid @RequestBody RegisterRequest request) {
+        authService.register(request);
+        return Map.of("message", "Account created. Check your email to verify.");
     }
 
+    /**
+     * Verifies the user's email by processing the provided token. This endpoint is invoked after
+     * the user clicks on the email verification link sent to their registered email address.
+     *
+     * @param body a map containing the "token" key, which holds the email verification token
+     * @return a map containing a single message with the confirmation of email verification
+     */
+    @PostMapping("/verify-email")
+    public Map<String, String> verifyEmail(@RequestBody Map<String, String> body) {
+        authService.verifyEmail(body.get("token"));
+        return Map.of("message", "Email verified");
+    }
+
+    /**
+     * Authenticates a user using the provided login credentials and generates a response
+     * containing a JWT token along with user details upon successful authentication.
+     *
+     * @param request the login request containing the user's email and password
+     * @return a ResponseEntity containing the authentication response with the generated token,
+     *         user details, and any relevant metadata
+     */
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login (@Valid @RequestBody LoginRequest loginRequest) {
-        return ResponseEntity.ok(authService.login(loginRequest));
+    public AuthResponse login(@Valid @RequestBody LoginRequest request) {
+        return authService.login(request);
+    }
+
+    /**
+     * Handles the process of changing a user's password. The user needs to provide
+     * the current password and a new password that meets the required criteria.
+     *
+     * @param request the request containing the current password and the new password
+     *                to update the user's credentials
+     * @return a map containing a message indicating the success of the password change operation
+     */
+    @PostMapping("/change-password")
+    public Map<String, String> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
+        authService.changePassword(request);
+        return Map.of("message", "Password changed");
+    }
+
+    /**
+     * Initiates the forgot password process for a user by accepting their email. If the email exists
+     * in the system, a reset link is sent to it. This endpoint does not reveal whether the email is
+     * valid for security reasons.
+     *
+     * @param request the forgot password request containing the email of the user who requires a
+     *                password reset
+     * @return a map containing a message indicating that if the email exists, a reset link has been sent
+     */
+    @PostMapping("/forgot-password")
+    public Map<String, String> forgotPassword(@RequestBody ForgotPasswordRequest request) {
+        authService.forgotPassword(request);
+        return Map.of("message", "If this email exists, a reset link has been sent.");
+    }
+
+    /**
+     * Resets the user's password using the provided reset token and new password. This endpoint
+     * is typically invoked after the user follows a password reset link sent to their email.
+     *
+     * @param request the request containing the password reset token and the new password
+     *                which must meet the required criteria
+     * @return a map containing a message indicating the success of the password reset operation
+     */
+    @PostMapping("/reset-password")
+    public Map<String, String> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request);
+        return Map.of("message", "Password reset successfully");
     }
 }

@@ -11,5 +11,7 @@ public interface TemplateRepository extends JpaRepository<Template, Long> {
 
     Page<Template> findByAccountId(Long accountId, Pageable pageable);
 
-    List<Template> findByAccountId(Long accountId); // for when you need all (e.g. export)
+    Page<Template> findByAccountIdAndCategory(Long accountId, String category, Pageable pageable);
+
+    List<Template> findByAccountId(Long accountId);
 }

@@ -1,20 +1,16 @@
 package com.mailengine.mailengine.dto.response;
 
 import com.mailengine.mailengine.entity.enums.Role;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.Setter;
 
-@Getter
-@Setter
-@AllArgsConstructor
-public class AuthResponse {
-
-    private String token;
-
-    private long userId;
-
-    private String email;
-
-    private Role role;
+public record AuthResponse(
+        String token,
+        UserDto user,
+        long expiresIn // Pass the token expiration (e.g., in seconds or millis)
+) {
+    public record UserDto(
+            Long id,
+            String name,
+            String email,
+            Role role
+    ) {}
 }
