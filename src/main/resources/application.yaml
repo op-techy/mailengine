@@ -49,10 +49,10 @@ jwt:
   expiration: ${JWT_EXPIRATION:86400000}
 
 aws:
-  region: us-east-1
+  region: ${AWS_REGION:us-east-1}
   s3:
-    bucket: mailengine-assets
-    cdn-base-url: https://mailengine-assets.s3.amazonaws.com
+    bucket: ${S3_BUCKET_NAME:mailengine-assets-2026}
+    cdn-base-url: ${S3_CDN_URL:https://mailengine-assets-2026.s3.amazonaws.com}
 
 app:
   mail:
