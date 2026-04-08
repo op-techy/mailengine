@@ -50,6 +50,7 @@ jwt:
 
 aws:
   region: ${AWS_REGION:us-east-1}
+  from-email: ${SES_MAIL:opeoluwa.babalola@stu.cu.edu.ng}
   s3:
     bucket: ${S3_BUCKET_NAME:mailengine-assets-2026}
     cdn-base-url: ${S3_CDN_URL:https://mailengine-assets-2026.s3.amazonaws.com}

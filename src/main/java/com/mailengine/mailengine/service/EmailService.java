@@ -7,6 +7,8 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.services.ses.SesClient;
+import software.amazon.awssdk.services.ses.model.SendEmailRequest;
 
 /**
  * Thin wrapper around Spring's JavaMailSender.
@@ -18,9 +20,9 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class EmailService {
 
-    private final JavaMailSender mailSender;
+    private final SesClient sesClient;
 
-    @Value("${app.mail.from:noreply@mailengine.app}")
+    @Value("${aws.from-email}")
     private String fromAddress;
 
     @Value("${app.base-url:http://localhost:8080}")
@@ -29,10 +31,8 @@ public class EmailService {
     @Async
     public void sendVerificationEmail(String toEmail, String token) {
         String link = baseUrl + "/api/auth/verify-email?token=" + token;
-        send(toEmail,
-                "Verify your MailEngine account",
-                "Welcome to MailEngine!\n\nPlease verify your email address by clicking the link below:\n\n"
-                        + link + "\n\nThe link expires in 24 hours.\n\nIf you did not sign up, please ignore this email.");
+        String body = "Welcome to MailEngine!\n\nPlease verify your email: " + link;
+        send(toEmail, "Verify your MailEngine account", body);
     }
 
     @Async
@@ -68,16 +68,18 @@ public class EmailService {
 
     private void send(String to, String subject, String body) {
         try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(fromAddress);
-            message.setTo(to);
-            message.setSubject(subject);
-            message.setText(body);
-            mailSender.send(message);
-            log.info("Email sent to {}: {}", to, subject);
+            SendEmailRequest request = SendEmailRequest.builder()
+                    .destination(d -> d.toAddresses(to))
+                    .message(m -> m
+                            .subject(s -> s.data(subject))
+                            .body(b -> b.html(h -> h.data(body))))
+                    .source(fromAddress)
+                    .build();
+
+            sesClient.sendEmail(request);
+            log.info("SES Email sent to {}: {}", to, subject);
         } catch (Exception e) {
-            log.error("Failed to send email to {}: {}", to, e.getMessage());
-            // Do not rethrow — a failed email must not roll back the calling transaction.
+            log.error("Failed to send SES email to {}: {}", to, e.getMessage());
         }
     }
 }

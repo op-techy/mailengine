@@ -59,6 +59,9 @@ dependencies {
     // S3 module
     implementation 'software.amazon.awssdk:s3'
 
+    // SES SDK
+    implementation 'software.amazon.awssdk:ses:2.25.15'
+
     // ── Ahmed's ADDITIONS (BE-3 & BE-4) ─────────────────────────────────
 
     // Rate limiting — controls how fast the worker sends emails to SES (BE-3)
