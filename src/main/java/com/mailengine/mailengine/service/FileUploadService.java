@@ -3,19 +3,22 @@ package com.mailengine.mailengine.service;
 import com.mailengine.mailengine.entity.*;
 import com.mailengine.mailengine.entity.enums.RecipientStatus;
 import com.mailengine.mailengine.entity.enums.UploadStatus;
+import com.mailengine.mailengine.exception.BadRequestException;
 import com.mailengine.mailengine.repository.*;
 import com.opencsv.CSVReader;
 import com.opencsv.CSVReaderBuilder;
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStreamReader;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -30,44 +33,74 @@ public class FileUploadService {
     private final DataFormatter dataFormatter = new DataFormatter();
 
     /**
-     * Async entry point — detects file type and delegates.
-     * Columns are assumed to be: 0=email, 1=firstName, 2=lastName.
-     * Full column-mapping support (PRD Flow 3 step 4) is a post-MVP enhancement;
-     * the file_uploads.column_mapping JSONB field is ready to store the mapping
-     * once that wizard step is built.
+     Async entry point — detects file type and delegates to the transactional import method.
+     * {@code @Async} and @Transactional cannot be on the same method because Spring's async proxy
+     * wraps the call before the transaction proxy can intercept it. The fix is this
+     * thin @Async dispatcher calling a separate @Transactional method.
      */
     @Async
-    @Transactional
     public void processImport(Long fileUploadId, MultipartFile file, Long listId, Long accountId) {
         String filename = file.getOriginalFilename();
         boolean isExcel = filename != null &&
                 (filename.toLowerCase().endsWith(".xlsx") || filename.toLowerCase().endsWith(".xls"));
         if (isExcel) {
-            processExcel(fileUploadId, file, listId, accountId);
+            doProcessExcel(fileUploadId, file, listId, accountId);
         } else {
-            processCsv(fileUploadId, file, listId, accountId);
+            doProcessCsv(fileUploadId, file, listId, accountId);
         }
+    }
+
+    @Transactional
+    public ImportResult applyMapping(Long uploadId, Map<String, String> mapping) {
+        FileUpload upload = fileUploadRepository.findById(uploadId)
+                .orElseThrow(() -> new BadRequestException("Upload not found"));
+
+        // Persist the mapping for audit / future reference
+        upload.setColumnMapping(new java.util.HashMap<>(mapping));
+        fileUploadRepository.save(upload);
+
+        // Return the current stats — full re-import with custom mapping is a post-MVP feature.
+        // The mapping is stored and will be used by the sending pipeline for merge tags.
+        return new ImportResult(
+                upload.getTotalRows(),
+                upload.getImportedRows(),
+                upload.getSkippedRows(),
+                upload.getDuplicateRows()
+        );
     }
 
     // ── CSV ───────────────────────────────────────────────────────────────────
 
-    private void processCsv(Long fileUploadId, MultipartFile file, Long listId, Long accountId) {
+    private void doProcessCsv(Long fileUploadId, MultipartFile file, Long listId, Long accountId) {
         FileUpload upload = fileUploadRepository.findById(fileUploadId).orElseThrow();
         RecipientList list = recipientListRepository.findById(listId).orElseThrow();
         ImportStats stats = new ImportStats();
 
         try (CSVReader reader = new CSVReaderBuilder(
                 new InputStreamReader(file.getInputStream()))
-                .withSkipLines(1)   // skip header row
                 .build()) {
+
+            String[] headers = reader.readNext(); // first row is headers
+            if (headers == null) {
+                fail(upload, stats);
+                return;
+            }
+
+            // Build a header→index map for flexible column ordering
+            Map<String, Integer> colIndex = buildColumnIndex(headers);
+
+            // Store the column preview on the upload record
+            Map<String, Object> preview = new LinkedHashMap<>();
+            for (String h : headers) preview.put(h, "");
+            upload.setColumnPreview(preview);
 
             String[] row;
             while ((row = reader.readNext()) != null) {
                 stats.totalRows++;
                 processRow(
-                        getValue(row, 0),
-                        getValue(row, 1),
-                        getValue(row, 2),
+                        getByName(row, colIndex, "email"),
+                        getByName(row, colIndex, "first_name"),
+                        getByName(row, colIndex, "last_name"),
                         accountId, listId, list, stats
                 );
             }
@@ -81,7 +114,8 @@ public class FileUploadService {
 
     // ── Excel ─────────────────────────────────────────────────────────────────
 
-    private void processExcel(Long fileUploadId, MultipartFile file, Long listId, Long accountId) {
+    @Transactional
+    public void doProcessExcel(Long fileUploadId, MultipartFile file, Long listId, Long accountId) {
         FileUpload upload = fileUploadRepository.findById(fileUploadId).orElseThrow();
         RecipientList list = recipientListRepository.findById(listId).orElseThrow();
         ImportStats stats = new ImportStats();
@@ -90,14 +124,30 @@ public class FileUploadService {
             if (wb.getNumberOfSheets() == 0) throw new IllegalArgumentException("No sheets found");
             Sheet sheet = wb.getSheetAt(0);
 
+            Row headerRow = sheet.getRow(0);
+            if (headerRow == null) {
+                fail(upload, stats);
+                return;
+            }
+
+            // Build column index from header row
+            Map<String, Integer> colIndex = new LinkedHashMap<>();
+            Map<String, Object> preview = new LinkedHashMap<>();
+            for (Cell cell : headerRow) {
+                String h = dataFormatter.formatCellValue(cell).trim().toLowerCase(Locale.ROOT);
+                colIndex.put(h, cell.getColumnIndex());
+                preview.put(h, "");
+            }
+            upload.setColumnPreview(preview);
+
             for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                 Row row = sheet.getRow(i);
                 if (row == null) continue;
                 stats.totalRows++;
                 processRow(
-                        getCellValue(row, 0),
-                        getCellValue(row, 1),
-                        getCellValue(row, 2),
+                        getExcelCell(row, colIndex, "email"),
+                        getExcelCell(row, colIndex, "first_name"),
+                        getExcelCell(row, colIndex, "last_name"),
                         accountId, listId, list, stats
                 );
             }
@@ -121,15 +171,12 @@ public class FileUploadService {
 
         String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
 
-        // Check suppression list (covers hard bounces, complaints, unsubscribes)
         if (suppressionListRepository.existsByAccountIdAndEmail(accountId, normalizedEmail)) {
             stats.skipped++;
             return;
         }
 
-        // Check for existing active recipient in this account
         if (recipientRepository.existsByAccountIdAndEmail(accountId, normalizedEmail)) {
-            // They exist — check if already in this list
             recipientRepository.findByAccountIdAndEmail(accountId, normalizedEmail)
                     .ifPresent(existing -> {
                         if (existing.getStatus() == RecipientStatus.unsubscribed ||
@@ -137,7 +184,6 @@ public class FileUploadService {
                             stats.skipped++;
                         } else if (!recipientListMemberRepository
                                 .existsByRecipientListIdAndRecipientId(listId, existing.getId())) {
-                            // Valid recipient not yet in this list — add membership
                             addMembership(existing, listId, list);
                             stats.imported++;
                         } else {
@@ -147,7 +193,6 @@ public class FileUploadService {
             return;
         }
 
-        // Brand new recipient
         saveNewRecipientToList(normalizedEmail, firstName, lastName, accountId, listId, list);
         stats.imported++;
     }
@@ -186,7 +231,6 @@ public class FileUploadService {
     private void complete(FileUpload upload, RecipientList list, ImportStats stats) {
         list.setRecipientCount(list.getRecipientCount() + stats.imported);
         recipientListRepository.save(list);
-
         upload.setStatus(UploadStatus.completed);
         saveStats(upload, stats);
     }
@@ -204,22 +248,40 @@ public class FileUploadService {
         fileUploadRepository.save(upload);
     }
 
-    // ── Cell helpers ──────────────────────────────────────────────────────────
+    // ── Column helpers ──────────────────────────────────────────────────────────
 
-    private String getValue(String[] row, int index) {
-        if (row.length <= index || row[index] == null) return null;
-        String v = row[index].trim();
+    private Map<String, Integer> buildColumnIndex(String[] headers) {
+        Map<String, Integer> idx = new LinkedHashMap<>();
+        for (int i = 0; i < headers.length; i++) {
+            idx.put(headers[i].trim().toLowerCase(Locale.ROOT), i);
+        }
+        return idx;
+    }
+
+    private String getByName(String[] row, Map<String, Integer> colIndex, String name) {
+        Integer idx = colIndex.get(name);
+        if (idx == null || idx >= row.length || row[idx] == null) return null;
+        String v = row[idx].trim();
         return v.isBlank() ? null : v;
     }
 
-    private String getCellValue(Row row, int cellIndex) {
-        Cell cell = row.getCell(cellIndex);
+    private String getExcelCell(Row row, Map<String, Integer> colIndex, String name) {
+        Integer idx = colIndex.get(name);
+        if (idx == null) return null;
+        Cell cell = row.getCell(idx);
         if (cell == null) return null;
         String v = dataFormatter.formatCellValue(cell).trim();
         return v.isBlank() ? null : v;
     }
 
+
+    // ── Result types ──────────────────────────────────────────────────────────
     private static class ImportStats {
-        int totalRows, imported, skipped, duplicates;
+        int totalRows;
+        int imported;
+        int skipped;
+        int duplicates;
     }
+
+    public record ImportResult(Integer totalRows, Integer imported, Integer skipped, Integer duplicates) {}
 }

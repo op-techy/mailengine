@@ -35,15 +35,15 @@ public class AuthController {
     }
 
     /**
-     * Verifies the user's email by processing the provided token. This endpoint is invoked after
-     * the user clicks on the email verification link sent to their registered email address.
+     * Verifies a user's email using the provided token. The token is extracted
+     * from the request body and is used to confirm the user's email address.
      *
-     * @param body a map containing the "token" key, which holds the email verification token
-     * @return a map containing a single message with the confirmation of email verification
+     * @param body the request body containing the token required for email verification
+     * @return a map containing a success message indicating that the email verification was successful
      */
-    @PostMapping("/verify-email")
-    public Map<String, String> verifyEmail(@RequestBody Map<String, String> body) {
-        authService.verifyEmail(body.get("token"));
+    @GetMapping("/verify-email")
+    public Map<String, String> verifyEmail(@RequestParam String token) {
+        authService.verifyEmail(token);
         return Map.of("message", "Email verified");
     }
 
