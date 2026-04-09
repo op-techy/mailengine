@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/recipient-lists")
@@ -25,24 +26,18 @@ public class RecipientListController {
         return ResponseEntity.ok(recipientListService.getLists());
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<RecipientListResponse> getListById(@PathVariable Long id) {
-        return ResponseEntity.ok(recipientListService.getListById(id));
-    }
-
     @PostMapping
-    public ResponseEntity<RecipientListResponse> createList(
+    public ResponseEntity<Map<String, Object>> createList(
             @Valid @RequestBody CreateRecipientListRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(recipientListService.createList(request));
+        RecipientListResponse list = recipientListService.createList(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+                "id",   list.getId(),
+                "name", list.getName()
+        ));
     }
 
-    @PutMapping("/{id}")
-    public ResponseEntity<RecipientListResponse> updateList(
-            @PathVariable Long id,
-            @Valid @RequestBody CreateRecipientListRequest request) {
-        return ResponseEntity.ok(recipientListService.updateList(id, request));
-    }
-
+    // DELETE /api/recipient-lists/{id}
+    // Response: 204
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteList(@PathVariable Long id) {
         recipientListService.deleteList(id);
@@ -50,7 +45,13 @@ public class RecipientListController {
     }
 
     /**
-     * PRD Part 9 §5 — export all recipients in a list as a downloadable CSV.
+     * Exports the recipient list as a CSV file and returns it as a byte array
+     * in the response. The resulting file contains details of each recipient
+     * in the specified list.
+     *
+     * @param id the ID of the recipient list to be exported
+     * @return a {@code ResponseEntity} containing the CSV file as a byte array,
+     *         with appropriate headers indicating the file name and content type
      */
     @GetMapping("/{id}/export")
     public ResponseEntity<byte[]> exportCsv(@PathVariable Long id) {

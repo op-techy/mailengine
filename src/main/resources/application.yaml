@@ -11,12 +11,12 @@ spring:
 
   jpa:
     open-in-view: false
-    show-sql: true
+    show-sql: false
     hibernate:
       ddl-auto: none
     properties:
       hibernate:
-        format_sql: true
+        format_sql: false
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
   # Database Migration
@@ -24,10 +24,20 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
-  # Mail Configuration
+  # Mail via SES SMTP in production, MailHog locally
+  # Production: set MAIL_HOST=email-smtp.us-east-1.amazonaws.com, MAIL_PORT=587,
+  #             MAIL_USERNAME=<SES SMTP user>, MAIL_PASSWORD=<SES SMTP pass>
   mail:
     host: ${MAIL_HOST:localhost}
     port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:false}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:false}
 
   # File Upload Limits
   servlet:
@@ -43,40 +53,28 @@ spring:
         max-size: 8
         queue-capacity: 500
 
-# Custom Application Properties
+
 jwt:
-  secret: ${JWT_SECRET:CHANGE_ME_USE_A_LONG_RANDOM_BASE64_STRING_AT_LEAST_64_CHARS}
+  secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:86400000}
 
 aws:
   region: ${AWS_REGION:us-east-1}
-  from-email: ${SES_MAIL:opeoluwa.babalola@stu.cu.edu.ng}
   s3:
-    bucket: ${S3_BUCKET_NAME:mailengine-assets-2026}
-    cdn-base-url: ${S3_CDN_URL:https://mailengine-assets-2026.s3.amazonaws.com}
+    bucket: ${S3_BUCKET_NAME}
+    cdn-base-url: ${S3_CDN_URL}
 
 app:
   mail:
-    from: noreply@mailengine.app
+    from: ${MAIL_FROM:noreply@mailengine.app}
   base-url: ${APP_BASE_URL:http://localhost:8080}
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+    # Comma-separated list of allowed frontend origins.
+    # Example: https://myapp.up.railway.app,https://myapp.vercel.app
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,https://mailengine-production-11eb.up.railway.app/, https://mailengine-production-11eb.up.railway.app/swagger-ui/index.html#/}
 
 logging:
   level:
-    org.springframework.security: DEBUG
-
-#---
-## Local Development Profile
-## Use this on your MacBook Pro by running with -Dspring.profiles.active=local
-#spring:
-#  config:
-#    activate:
-#      on-profile: local
-#  datasource:
-#    url: jdbc:postgresql://localhost:5432/mailengine
-#    username: mailengine
-#    password: changeme
-#  jpa:
-#    hibernate:
-#      ddl-auto: update
+    root: INFO
+    com.mailengine: DEBUG
+    org.springframework: WARN

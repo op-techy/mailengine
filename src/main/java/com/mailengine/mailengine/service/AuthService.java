@@ -30,6 +30,9 @@ import java.util.UUID;
 @Transactional
 public class AuthService {
 
+    private static final int MAX_FAILED_ATTEMPTS = 5;
+    private static final int LOCKOUT_MINUTES = 15;
+
     private final UserRepository userRepository;
     private final AccountRepository accountRepository;
     private final EmailVerificationTokenRepository verificationTokenRepository;
@@ -117,10 +120,26 @@ public class AuthService {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
 
+        // check account lockout
+        if(user.isLocked()){
+            throw new UnauthorizedException("Account locked, try again later");
+        }
+
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            // update failed login attempts
+            int attempts = user.getFailedLoginAttempts() + 1;
+            user.setFailedLoginAttempts(attempts);
+            if(attempts >= MAX_FAILED_ATTEMPTS){
+                user.setLockedUntil(Instant.now().plus(LOCKOUT_MINUTES, ChronoUnit.MINUTES));
+            }
+            userRepository.save(user);
+
             throw new UnauthorizedException("Invalid email or password");
         }
 
+        // Successful login, reset failed attempts and lockout
+        user.setFailedLoginAttempts(0);
+        user.setLockedUntil(null);
         user.setLastLogin(Instant.now());
         userRepository.save(user);
 

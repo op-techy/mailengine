@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/users")
@@ -20,21 +21,49 @@ public class UserController {
 
     private final UserService userService;
 
+    /**
+     * Retrieves a list of users associated with the current account.
+     *
+     * @return a {@code ResponseEntity} containing a list of {@code UserResponse} objects,
+     * which represent the details of each user including ID, name, email, role, email verification status,
+     * password change requirement, last login timestamp, and creation timestamp.
+     */
     @GetMapping
     public ResponseEntity<List<UserResponse>> getUsers() {
         return ResponseEntity.ok(userService.getUsers());
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<UserResponse> getUserById(@PathVariable Long id) {
-        return ResponseEntity.ok(userService.getUserById(id));
-    }
-
+    /**
+     * Invites a new user to the system by creating an account for them and sending an invitation email.
+     *
+     * @param request the {@code InviteUserRequest} object containing the details of the user to be invited,
+     *                including name, email, and role.
+     * @return a {@code ResponseEntity} containing a {@code Map} with the user details, including:
+     *         - "id": the unique identifier of the invited user
+     *         - "name": the name of the invited user
+     *         - "email": the email address of the invited user
+     *         - "role": the assigned role of the invited user
+     */
     @PostMapping("/invite")
-    public ResponseEntity<UserResponse> inviteUser(@Valid @RequestBody InviteUserRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(userService.inviteUser(request));
+    public ResponseEntity<Map<String, Object>> inviteUser(@Valid @RequestBody InviteUserRequest request) {
+       UserResponse user = userService.inviteUser(request);
+       return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+               "id", user.getId(),
+               "name", user.getName(),
+               "email", user.getEmail(),
+               "role", user.getRole()
+       ));
     }
 
+    /**
+     * Updates the role of a user with the specified ID.
+     *
+     * @param id the unique identifier of the user whose role is to be updated
+     * @param request the {@code UpdateRoleRequest} object containing the new role to be assigned to the user
+     * @return a {@code ResponseEntity} containing a {@code UserResponse} object with the updated user details,
+     *         including ID, name, email, role, email verification status, password change requirement,
+     *         last login timestamp, and creation timestamp
+     */
     @PutMapping("/{id}/role")
     public ResponseEntity<UserResponse> updateRole(
             @PathVariable Long id,
@@ -42,16 +71,30 @@ public class UserController {
         return ResponseEntity.ok(userService.updateRole(id, request));
     }
 
+    /**
+     * Deletes a user with the specified ID from the system.
+     * This operation is restricted to admin users and ensures that an admin
+     * cannot delete their own account.
+     *
+     * @param id the unique identifier of the user to be deleted
+     * @return a {@code ResponseEntity} with no content if the user is successfully deleted
+     */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
         userService.deleteUser(id);
         return ResponseEntity.noContent().build();
     }
 
-    /** Admin-initiated password reset — generates temp password and emails it. */
+    /**
+     * Resets a user's password by generating a temporary password and sending it to the user's email.
+     * This operation can only be performed by an admin.
+     *
+     * @param id the unique identifier of the user whose password is to be reset
+     * @return a {@code ResponseEntity} containing a {@code Map} with a success message
+     */
     @PostMapping("/{id}/reset-password")
-    public ResponseEntity<MessageResponse> adminResetPassword(@PathVariable Long id) {
+    public ResponseEntity<Map<String, String>> adminResetPassword(@PathVariable Long id) {
         userService.adminResetPassword(id);
-        return ResponseEntity.ok(new MessageResponse("Temporary password sent to user's email"));
+        return ResponseEntity.ok(Map.of("message","Temporary password sent to user's email"));
     }
 }

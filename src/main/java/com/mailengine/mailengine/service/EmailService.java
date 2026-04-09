@@ -20,9 +20,9 @@ import software.amazon.awssdk.services.ses.model.SendEmailRequest;
 @Slf4j
 public class EmailService {
 
-    private final SesClient sesClient;
+    private final JavaMailSender mailSender;
 
-    @Value("${aws.from-email}")
+    @Value("${app.mail.from:noreply@mailengine.app}")
     private String fromAddress;
 
     @Value("${app.base-url:http://localhost:8080}")
@@ -31,7 +31,11 @@ public class EmailService {
     @Async
     public void sendVerificationEmail(String toEmail, String token) {
         String link = baseUrl + "/api/auth/verify-email?token=" + token;
-        String body = "Welcome to MailEngine!\n\nPlease verify your email: " + link;
+        String body = "Welcome to MailEngine!\n\n"
+                + "Please verify your email address by clicking the link below:\n\n"
+                + link + "\n\n"
+                + "The link expires in 24 hours.\n\n"
+                + "If you did not sign up, please ignore this email.";
         send(toEmail, "Verify your MailEngine account", body);
     }
 
@@ -40,15 +44,19 @@ public class EmailService {
         String link = baseUrl + "/reset-password?token=" + token;
         send(toEmail,
                 "Reset your MailEngine password",
-                "You requested a password reset.\n\nClick the link below to set a new password:\n\n"
-                        + link + "\n\nThis link expires in 1 hour.\n\nIf you did not request this, please ignore this email.");
+                "You requested a password reset.\n\n"
+                        + "Click the link below to set a new password:\n\n"
+                        + link + "\n\n"
+                        + "This link expires in 1 hour.\n\n"
+                        + "If you did not request this, please ignore this email.");
     }
 
     @Async
     public void sendInvitationEmail(String toEmail, String tempPassword, String inviterName) {
         send(toEmail,
                 "You've been invited to MailEngine",
-                "Hi,\n\n" + inviterName + " has invited you to join their MailEngine team.\n\n"
+                "Hi,\n\n"
+                        + inviterName + " has invited you to join their MailEngine team.\n\n"
                         + "Your temporary credentials:\n"
                         + "  Email:    " + toEmail + "\n"
                         + "  Password: " + tempPassword + "\n\n"
@@ -68,18 +76,16 @@ public class EmailService {
 
     private void send(String to, String subject, String body) {
         try {
-            SendEmailRequest request = SendEmailRequest.builder()
-                    .destination(d -> d.toAddresses(to))
-                    .message(m -> m
-                            .subject(s -> s.data(subject))
-                            .body(b -> b.html(h -> h.data(body))))
-                    .source(fromAddress)
-                    .build();
-
-            sesClient.sendEmail(request);
-            log.info("SES Email sent to {}: {}", to, subject);
+            SimpleMailMessage msg = new SimpleMailMessage();
+            msg.setFrom(fromAddress);
+            msg.setTo(to);
+            msg.setSubject(subject);
+            msg.setText(body);
+            mailSender.send(msg);
+            log.info("Email sent → {} | {}", to, subject);
         } catch (Exception e) {
-            log.error("Failed to send SES email to {}: {}", to, e.getMessage());
+            // Never rethrow — a failed transactional email must not roll back the calling tx
+            log.error("Failed to send email → {} | {} | {}", to, subject, e.getMessage());
         }
     }
 }

@@ -24,7 +24,7 @@ public class GlobalExceptionHandler {
             errors.put(fe.getField(), fe.getDefaultMessage());
         }
         return ResponseEntity.badRequest()
-                .body(new ErrorResponse(HttpStatus.BAD_REQUEST.value(),
+                .body(new ErrorResponse(400,
                         "Validation failed", errors));
     }
 
@@ -39,28 +39,35 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse(HttpStatus.NOT_FOUND.value(), ex.getMessage(), null));
+                .body(new ErrorResponse(404, ex.getMessage(), null));
     }
 
     // ── Business-logic "conflict" (duplicate email, etc.) ────────────────────
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<ErrorResponse> handleConflict(ConflictException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(new ErrorResponse(HttpStatus.CONFLICT.value(), ex.getMessage(), null));
+                .body(new ErrorResponse(409, ex.getMessage(), null));
     }
 
     // ── Business-logic "bad request" ─────────────────────────────────────────
     @ExceptionHandler(BadRequestException.class)
     public ResponseEntity<ErrorResponse> handleBadRequest(BadRequestException ex) {
         return ResponseEntity.badRequest()
-                .body(new ErrorResponse(HttpStatus.BAD_REQUEST.value(), ex.getMessage(), null));
+                .body(new ErrorResponse(400, ex.getMessage(), null));
+    }
+
+    // ── Illegal Argument ─────────────────────────────────────────────────────
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(400, ex.getMessage(), null));
     }
 
     // ── Access denied ────────────────────────────────────────────────────────
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(new ErrorResponse(HttpStatus.FORBIDDEN.value(),
+                .body(new ErrorResponse(403,
                         "You do not have permission to perform this action", null));
     }
 
@@ -68,14 +75,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ErrorResponse> handleFileTooLarge(MaxUploadSizeExceededException ex) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
-                .body(new ErrorResponse(413, "File exceeds the maximum allowed size", null));
+                .body(new ErrorResponse(413, "File exceeds the maximum allowed size (10 MB)", null));
     }
 
     // ── Fallback ─────────────────────────────────────────────────────────────
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleAll(Exception ex) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                .body(new ErrorResponse(500,
                         "An unexpected error occurred. Please try again.", null));
     }
 

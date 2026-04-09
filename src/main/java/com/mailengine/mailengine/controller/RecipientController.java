@@ -1,18 +1,17 @@
 package com.mailengine.mailengine.controller;
 
-import com.mailengine.mailengine.dto.request.CreateRecipientRequest;
-import com.mailengine.mailengine.dto.response.FileUploadResponse;
+
 import com.mailengine.mailengine.dto.response.RecipientResponse;
 import com.mailengine.mailengine.entity.FileUpload;
 import com.mailengine.mailengine.entity.RecipientList;
 import com.mailengine.mailengine.entity.User;
 import com.mailengine.mailengine.entity.enums.UploadStatus;
+import com.mailengine.mailengine.exception.BadRequestException;
 import com.mailengine.mailengine.exception.ResourceNotFoundException;
 import com.mailengine.mailengine.repository.FileUploadRepository;
 import com.mailengine.mailengine.repository.RecipientListRepository;
 import com.mailengine.mailengine.service.FileUploadService;
 import com.mailengine.mailengine.service.RecipientService;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -22,7 +21,11 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+
+import java.util.Map;
+
 @RestController
+@RequestMapping("/api/recipient-lists")
 @RequiredArgsConstructor
 public class RecipientController {
 
@@ -31,9 +34,15 @@ public class RecipientController {
     private final FileUploadRepository fileUploadRepository;
     private final RecipientListRepository recipientListRepository;
 
-    // ── Recipients in a list ──────────────────────────────────────────────────
-
-    @GetMapping("/api/recipient-lists/{listId}/recipients")
+    /**
+     * Retrieves a paginated list of recipients associated with a specific recipient list.
+     *
+     * @param listId the ID of the recipient list for which the recipients are to be retrieved
+     * @param search an optional search term to filter the recipients by their attributes
+     * @param pageable pagination information for the recipient list
+     * @return a ResponseEntity containing a paginated list of RecipientResponse objects
+     */
+    @GetMapping("/{listId}/recipients")
     public ResponseEntity<Page<RecipientResponse>> getRecipients(
             @PathVariable Long listId,
             @RequestParam(required = false) String search,
@@ -41,33 +50,22 @@ public class RecipientController {
         return ResponseEntity.ok(recipientService.getRecipients(listId, search, pageable));
     }
 
-    @PostMapping("/api/recipient-lists/{listId}/recipients")
-    public ResponseEntity<RecipientResponse> addRecipient(
-            @PathVariable Long listId,
-            @Valid @RequestBody CreateRecipientRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(recipientService.addRecipient(listId, request));
-    }
-
-    @PatchMapping("/api/recipient-lists/{listId}/recipients/{email}/unsubscribe")
-    public ResponseEntity<Void> unsubscribe(
-            @PathVariable Long listId,
-            @PathVariable String email) {
-        recipientService.unsubscribe(email);
-        return ResponseEntity.noContent().build();
-    }
-
-    // ── CSV / Excel import ────────────────────────────────────────────────────
-
     /**
-     * Kick off an async import. Returns 202 with an uploadId to poll.
-     * PRD: POST /api/recipient-lists/{id}/upload
+     * Handles the upload of a file for importing recipients into the specified recipient list.
+     *
+     * @param listId the ID of the recipient list to which the uploaded file corresponds
+     * @param file the file to be uploaded, which contains recipient data
+     * @return a ResponseEntity containing a FileUploadResponse object with upload details;
+     *         returns HTTP 413 (PAYLOAD_TOO_LARGE) if the file exceeds 10 MB
      */
-    @PostMapping("/api/recipient-lists/{listId}/upload")
-    public ResponseEntity<FileUploadResponse> uploadFile(
+    @PostMapping("/{listId}/upload")
+    public ResponseEntity<Map<String,Object>> uploadFile(
             @PathVariable Long listId,
             @RequestParam("file") MultipartFile file) {
 
+        if (file.isEmpty()) {
+            throw new BadRequestException("File must not be empty");
+        }
         if (file.getSize() > 10 * 1024 * 1024) {  // 10 MB limit per PRD Part 9 §7
             return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).build();
         }
@@ -86,26 +84,10 @@ public class RecipientController {
 
         fileUploadService.processImport(upload.getId(), file, listId, current.getAccount().getId());
 
-        return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(new FileUploadResponse(upload.getId(), upload.getStatus()));
-    }
-
-    /**
-     * Poll upload progress.
-     * PRD: GET /api/uploads/{uploadId}/status
-     */
-    @GetMapping("/api/uploads/{uploadId}/status")
-    public ResponseEntity<FileUploadResponse> getUploadStatus(@PathVariable Long uploadId) {
-        FileUpload upload = fileUploadRepository.findById(uploadId)
-                .orElseThrow(() -> new ResourceNotFoundException("Upload not found"));
-        return ResponseEntity.ok(new FileUploadResponse(
-                upload.getId(),
-                upload.getStatus(),
-                upload.getTotalRows(),
-                upload.getImportedRows(),
-                upload.getSkippedRows(),
-                upload.getDuplicateRows()
-        ));
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.of(
+                "uploadId", upload.getId(),
+                "message",  "Processing..."
+                ));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

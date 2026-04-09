@@ -49,38 +49,37 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
 
         final String authHeader = request.getHeader("Authorization");
-        log.info("Auth header received: {}", authHeader);
-
-        final String jwt;
-
-        final String userId;
-
-        final User user;
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
         }
-        jwt = authHeader.substring(7);
+
+        // Skip if already authenticated (e.g. subsequent filters in the chain)
+        if (SecurityContextHolder.getContext().getAuthentication() != null) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        final String jwt = authHeader.substring(7);
+
         try{
-            userId = jwtService.extractUserId(jwt);
-            user = userRepository.findById(Long.parseLong(userId)).orElseThrow(() -> new RuntimeException("User not found"));
-            if (jwtService.isTokenValid(jwt)) {
-                UsernamePasswordAuthenticationToken authToken =
-                        new UsernamePasswordAuthenticationToken(
-                                user,
-                                null,
-                                user.getAuthorities()
-                        );
-                authToken.setDetails(
-                        new WebAuthenticationDetailsSource().buildDetails(request)
-                );
-                SecurityContextHolder.getContext().setAuthentication(authToken);
-                log.info("Authentication set for user: {}", user.getEmail());
-                log.info("Authorities: {}", authToken.getAuthorities());
+            if (!jwtService.isTokenValid(jwt)){
+                filterChain.doFilter(request, response);
+                return;
+            }
+            String userId = jwtService.extractUserId(jwt);
+            User user = userRepository.findById(Long.parseLong(userId)).orElseThrow(() -> new RuntimeException("User not found"));
+
+            if (user != null){
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+                log.debug("Authenticated user: {} role: {}", user.getEmail(), user.getRole());
             }
         } catch (Exception e){
-            logger.warn("JWT authentication failed: {}",e);
+            log.debug("JWT authentication failed for {}: {}", request.getRequestURI(), e.getMessage());
         }
         filterChain.doFilter(request, response);
 

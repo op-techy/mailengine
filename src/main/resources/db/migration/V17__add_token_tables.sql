@@ -1,6 +1,3 @@
--- Run this migration before starting the application.
--- Add these tables to your existing schema.
-
 CREATE TABLE IF NOT EXISTS email_verification_tokens (
     id          BIGSERIAL PRIMARY KEY,
     token       VARCHAR(255) NOT NULL UNIQUE,
