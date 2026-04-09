@@ -36,14 +36,13 @@ public class SecurityConfig {
      * This variable is populated from an external property source, typically
      * specified in the application's configuration file or environment variables.
      *
-     * The property key is `app.cors.allowed-origins`, and the default value is
-     * "http://localhost:3000,http://localhost:5173" if no value is provided.
+     * The property key is `app.cors.allowed-origins`, and the default value is if no value is provided.
      *
      * This list represents the domains that are permitted to send cross-origin
      * requests to the application. It is primarily used in configuring CORS policy
      * within the security configuration.
      */
-    @Value("${app.cors.allowed-origins:http://localhost:3000,http://localhost:5173}")
+    @Value("${app.cors.allowed-origins:*}")
     private String allowedOriginsRaw;
 
     @Bean
@@ -76,7 +75,7 @@ public class SecurityConfig {
                 .collect(Collectors.toList());
 
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(origins);
+        config.setAllowedOriginPatterns(origins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin",
                 "X-Requested-With", "Access-Control-Request-Method", "Access-Control-Request-Headers"));

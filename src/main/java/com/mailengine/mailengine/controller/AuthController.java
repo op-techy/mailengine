@@ -41,9 +41,9 @@ public class AuthController {
      * @param body the request body containing the token required for email verification
      * @return a map containing a success message indicating that the email verification was successful
      */
-    @GetMapping("/verify-email")
-    public Map<String, String> verifyEmail(@RequestParam String token) {
-        authService.verifyEmail(token);
+    @PostMapping("/verify-email")
+    public Map<String, String> verifyEmail(@RequestBody Map<String,String> body) {
+        authService.verifyEmail(body.get("token"));
         return Map.of("message", "Email verified");
     }
 
